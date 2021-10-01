@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+
+import sys
+import json
+import requests
+from urllib.parse import urlparse
+import os
+
+data = json.load(sys.stdin)
+
+dest_dir = sys.argv[1]
+
+url = data["source"]["url"]
+parsed_url = urlparse(url)
+dest_fn = os.path.basename(parsed_url.path)
+
+dest_path = os.path.join(dest_dir, dest_fn)
+
+etag = data.get("version", {}).get("etag", None)
+
+if not etag:
+    print("No version specified", file=sys.stderr)
+    sys.exit(1)
+
+headers = {}
+headers["If-Match"] = etag
+
+res = requests.get(url, headers=headers, allow_redirects=True, stream=True)
+if res.status_code == 412:
+    print("No version found", file=sys.stderr)
+    sys.exit(2)
+
+with open(dest_path, "wb") as f:
+    for chunk in res.iter_content(chunk_size=8192):
+        f.write(chunk)
+
+output = {
+    "version": {"etag": etag},
+    "metadata": []
+}
+
+json.dump(output, sys.stdout)
